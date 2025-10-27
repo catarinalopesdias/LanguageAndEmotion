@@ -13,7 +13,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 #######################################################################
 
 # Step 1: Load the Sentence-BERT model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('all-MPNet-base-v2')#('all-MiniLM-L6-v2')
+#all-MiniLM-L12-v2		Slightly better than L6, slower
+#all-MPNet-base-v2
 
 # Step 2: Define a list of texts (sentences, documents, etc.)
 # To read a specific sheet, use the `sheet_name` parameter.
@@ -284,11 +286,11 @@ import numpy as np
 
 # Run spectral clustering
 
-n_clusters = 4  # Change this based on your expected clusters
+n_clusters = 3  # Change this based on your expected clusters
 
 
 
-sc = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', assign_labels='kmeans')
+sc = SpectralClustering(n_clusters=n_clusters, affinity='precomputed') #, assign_labels='kmeans'
 labels = sc.fit_predict(similarity_matrix_traits)
 
 
@@ -352,8 +354,117 @@ plt.show()
 
 #Leave the rest as a big "leftover" cluster
 
-###########
+##################################
+# spectral clustering implementation
+##################################################
+#assert 
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import normalize
+import numpy as np
 
 
 
-"""
+assert np.allclose(similarity_matrix_traits, similarity_matrix_traits.T)
+
+S = similarity_matrix_traits.copy()
+threshold = 0.7  # only keep similarities above this
+S[S < threshold] = 0
+
+# ------------------------------------
+# 2. Build the normalized Laplacian
+# ------------------------------------
+# Degree matrix
+D = np.diag(similarity_matrix_traits.sum(axis=1))
+# Normalized Laplacian
+D_inv_sqrt = np.diag(1.0 / np.sqrt(np.sum(similarity_matrix_traits, axis=1)))
+L_sym = np.eye(len(similarity_matrix_traits)) - D_inv_sqrt @ similarity_matrix_traits @ D_inv_sqrt
+
+# ------------------------------------
+# 3. Compute eigenvalues and eigenvectors
+# ------------------------------------
+eigenvals, eigenvecs = np.linalg.eigh(L_sym)
+
+# Sort by eigenvalue
+idx = np.argsort(eigenvals)
+eigenvals = eigenvals[idx]
+eigenvecs = eigenvecs[:, idx]
+
+# ------------------------------------
+# 4. Plot eigenvalue spectrum (the "eigengap" plot)
+# ------------------------------------
+plt.figure(figsize=(6,4))
+plt.plot(range(1, len(eigenvals)+1), eigenvals, marker='o')
+plt.xlabel("Eigenvalue index")
+plt.ylabel("Eigenvalue (Laplacian)")
+plt.title("Eigenvalue spectrum (find the 'elbow')")
+plt.grid(True)
+
+plt.savefig('semantic_similarity/automatic_numberclusters_fund the elbow.pdf', bbox_inches='tight')
+plt.show()
+
+# ------------------------------------
+# 5. Automatically estimate k (number of clusters)
+# ------------------------------------
+# Find the largest gap between consecutive eigenvalues
+diffs = np.diff(eigenvals)
+k_est = np.argmax(diffs[:59]) + 1   # Only consider first 20 typically
+print(f"Estimated number of clusters (eigengap heuristic): k = {k_est}")
+
+# ------------------------------------
+# 6. Cluster in eigenvector space
+# ------------------------------------
+U = eigenvecs[:, :k_est]          # take the first k_est eigenvectors
+U_norm = normalize(U)             # row-normalize
+kmeans = KMeans(n_clusters=k_est, n_init=20, random_state=42)
+labels = kmeans.fit_predict(U_norm)
+
+# ------------------------------------
+# 7. Inspect clusters
+# ------------------------------------
+#print("Cluster labels:", labels)
+
+S = similarity_matrix_traits.copy()
+threshold = 0.35  # only keep similarities above this
+S[S < threshold] = 0
+
+
+D = np.diag(S.sum(axis=1))
+# Normalized Laplacian
+D_inv_sqrt = np.diag(1.0 / np.sqrt(np.sum(S, axis=1)))
+L_sym = np.eye(len(    S)) - D_inv_sqrt @ S @ D_inv_sqrt
+
+# ------------------------------------
+# 3. Compute eigenvalues and eigenvectors
+# ------------------------------------
+eigenvals, eigenvecs = np.linalg.eigh(L_sym)
+
+# Sort by eigenvalue
+idx = np.argsort(eigenvals)
+eigenvals = eigenvals[idx]
+eigenvecs = eigenvecs[:, idx]
+
+# ------------------------------------
+# 4. Plot eigenvalue spectrum (the "eigengap" plot)
+# ------------------------------------
+plt.figure(figsize=(6,4))
+plt.plot(range(1, len(eigenvals)+1), eigenvals, marker='o')
+plt.xlabel("Eigenvalue index")
+plt.ylabel("Eigenvalue (Laplacian)")
+plt.title("Eigenvalue spectrum (find the 'elbow')")
+plt.grid(True)
+
+plt.savefig('semantic_similarity/automatic_numberclusters_fund the elbow.pdf', bbox_inches='tight')
+plt.show()
+
+# ------------------------------------
+# 5. Automatically estimate k (number of clusters)
+# ------------------------------------
+# Find the largest gap between consecutive eigenvalues
+diffs = np.diff(eigenvals)
+k_est = np.argmax(diffs[:58]) + 1   # Only consider first 20 typically
+print(f"Estimated number of clusters (eigengap heuristic): k = {k_est}")
+
+U = eigenvecs[:, :k_est]          # take the first k_est eigenvectors
+U_norm = normalize(U)             # row-normalize
+kmeans = KMeans(n_clusters=k_est, n_init=20, random_state=42)
+labels = kmeans.fit_predict(U_norm)
